@@ -1,85 +1,169 @@
-// server.js
-
-// Import required modules
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const bodyParser = require('body-parser');
-const dotenv = require('dotenv');
+require('dotenv').config();
 
-// Load environment variables from .env file
-dotenv.config();
-
-// Initialize Express app
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-// In-memory user storage (for demonstration purposes)
-let users = [];
+// Demo storage only. Use a database for persistent accounts.
+const users = [];
 
-// JWT secret key
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// User registration route
-app.post('/register', (req, res) => {
-    const { username, password } = req.body;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET must be configured in production');
+}
 
-    // Check if user already exists
-    const existingUser = users.find(user => user.username === username);
-    if (existingUser) {
-        return res.status(400).json({ message: 'User already exists' });
-    }
+const secret = JWT_SECRET || 'development-only-secret-change-me';
 
-    // Hash the password and store the user
-    const hashedPassword = bcrypt.hashSync(password, 8);
-    users.push({ username, password: hashedPassword });
-    res.status(201).json({ message: 'User registered successfully' });
-});
+function createToken(user) {
+  return jwt.sign(
+    { id: user.username },
+    secret,
+    { expiresIn: '24h' }
+  );
+}
 
-// User login route
-app.post('/login', (req, res) => {
-    const { username, password } = req.body;
+function publicUser(user) {
+  return {
+    name: user.name,
+    username: user.username,
+    email: user.email
+  };
+}
 
-    // Find the user
-    const user = users.find(user => user.username === username);
+function verifyToken(req, res, next) {
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ')
+    ? authorization.slice(7)
+    : req.headers['x-access-token'];
+
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret);
+    const user = users.find(item => item.username === decoded.id);
+
     if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+      return res.status(401).json({ message: 'User not found' });
     }
 
-    // Check password
-    const passwordIsValid = bcrypt.compareSync(password, user.password);
-    if (!passwordIsValid) {
-        return res.status(401).json({ accessToken: null, message: 'Invalid password' });
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
+
+// Register
+app.post(['/register', '/api/auth/register'], async (req, res) => {
+  try {
+    const { name, username, email, password } = req.body || {};
+
+    if (
+      !name?.trim() ||
+      !username?.trim() ||
+      !email?.trim() ||
+      typeof password !== 'string' ||
+      password.length < 8
+    ) {
+      return res.status(400).json({
+        message: 'Name, username, email and a password of at least 8 characters are required'
+      });
     }
 
-    // Create JWT token
-    const token = jwt.sign({ id: user.username }, JWT_SECRET, { expiresIn: 86400 }); // 24 hours
-    res.status(200).json({ accessToken: token });
-});
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
 
-// Middleware to verify JWT
-const verifyToken = (req, res, next) => {
-    const token = req.headers['x-access-token'];
-    if (!token) {
-        return res.status(403).json({ message: 'No token provided!' });
+    const existing = users.find(user =>
+      user.username === normalizedUsername ||
+      user.email === normalizedEmail
+    );
+
+    if (existing) {
+      return res.status(409).json({
+        message: 'Username or email is already registered'
+      });
     }
 
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-        if (err) {
-            return res.status(401).json({ message: 'Unauthorized!' });
-        }
-        req.userId = decoded.id;
-        next();
+    const user = {
+      name: name.trim(),
+      username: normalizedUsername,
+      email: normalizedEmail,
+      password: await bcrypt.hash(password, 12)
+    };
+
+    users.push(user);
+
+    return res.status(201).json({
+      token: createToken(user),
+      user: publicUser(user)
     });
-};
+  } catch (error) {
+    console.error('Registration failed:', error);
+    return res.status(500).json({ message: 'Registration failed' });
+  }
+});
 
-// Protected route
+// Login
+app.post(['/login', '/api/auth/login'], async (req, res) => {
+  try {
+    const { username, email, password } = req.body || {};
+    const loginId = (username || email || '').trim().toLowerCase();
+
+    if (!loginId || !password) {
+      return res.status(400).json({
+        message: 'Username/email and password are required'
+      });
+    }
+
+    const user = users.find(item =>
+      item.username === loginId || item.email === loginId
+    );
+
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({
+        message: 'Invalid username/email or password'
+      });
+    }
+
+    return res.json({
+      token: createToken(user),
+      user: publicUser(user)
+    });
+  } catch (error) {
+    console.error('Login failed:', error);
+    return res.status(500).json({ message: 'Login failed' });
+  }
+});
+
+// Current logged-in user
+app.get(['/me', '/api/auth/me'], verifyToken, (req, res) => {
+  res.json({ user: publicUser(req.user) });
+});
+
+// Keep the original protected endpoint
 app.get('/protected', verifyToken, (req, res) => {
-    res.status(200).json({ message: 'This is a protected route', userId: req.userId });
+  res.json({
+    message: 'This is a protected route',
+    userId: req.user.username
+  });
 });
 
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+app.get('/', (req, res) => {
+  res.json({ message: 'PenYourPlot authentication API is running' });
 });
+
+// Vercel's Express runtime handles the exported app.
+module.exports = app;
+
+// Allow local development too.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
