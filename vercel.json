@@ -1,13 +1,12 @@
-
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
-    "express-jwt-api": {
-      "root": "PenYourPlot-main/PenYourPlot-main/express-jwt-api",
+    "backend": {
+      "root": "express-jwt-api",
       "framework": "express"
     },
-    "project1": {
-      "root": "PenYourPlot-main/PenYourPlot-main/Project1",
+    "frontend": {
+      "root": "Project1",
       "framework": "vite"
     }
   },
@@ -15,13 +14,13 @@
     {
       "source": "/api/(.*)",
       "destination": {
-        "service": "express-jwt-api"
+        "service": "frontend"
       }
     },
     {
       "source": "/(.*)",
       "destination": {
-        "service": "project1"
+        "service": "frontend"
       }
     }
   ]
