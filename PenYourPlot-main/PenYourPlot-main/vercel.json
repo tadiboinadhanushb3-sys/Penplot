@@ -1,16 +1,23 @@
+
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
-    "backend": {
-      "root": "express-jwt-api",
-      "framework": "express"
-    },
     "frontend": {
       "root": "Project1",
       "framework": "vite"
+    },
+    "backend": {
+      "root": "express-jwt-api",
+      "framework": "express"
     }
   },
   "rewrites": [
+    {
+      "source": "/api/auth/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
     {
       "source": "/api/(.*)",
       "destination": {
