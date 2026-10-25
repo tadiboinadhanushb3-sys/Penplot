@@ -1,0 +1,28 @@
+
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "express-jwt-api": {
+      "root": "PenYourPlot-main/PenYourPlot-main/express-jwt-api",
+      "framework": "express"
+    },
+    "project1": {
+      "root": "PenYourPlot-main/PenYourPlot-main/Project1",
+      "framework": "vite"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "express-jwt-api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "project1"
+      }
+    }
+  ]
+}
